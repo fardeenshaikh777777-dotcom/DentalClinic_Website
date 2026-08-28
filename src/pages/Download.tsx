@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PROJECT_FILES } from "../lib/projectFiles";
 import {
   ZIP_NAME,
+  buildSourceText,
   copyAllSource,
   createSourceZipBlob,
   formatKb,
   isInIframe,
   openZipInNewTab,
+  saveViaFileSystemAccess,
   totalSourceBytes,
   triggerAnchorDownload,
   validateManifest,
@@ -18,6 +20,7 @@ import {
   IconAlert,
   IconArrowUpRight,
   IconCheck,
+  IconClose,
   IconSpinner,
   IconTooth,
 } from "../components/icons";
@@ -42,6 +45,7 @@ type Tone = "info" | "success" | "error";
 
 export default function Download() {
   const [phase, setPhase] = useState<Phase>("building");
+  const [zipBlob, setZipBlob] = useState<Blob | null>(null);
   const [zipUrl, setZipUrl] = useState<string | null>(null);
   const [zipSize, setZipSize] = useState<number | null>(null);
   const [verification, setVerification] = useState<{
@@ -51,11 +55,13 @@ export default function Download() {
   const [verifyFailed, setVerifyFailed] = useState(false);
   const [inFrame] = useState<boolean>(() => isInIframe());
   const [status, setStatus] = useState<{ tone: Tone; text: string } | null>(null);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const sourceRef = useRef<HTMLTextAreaElement>(null);
 
   const manifest = validateManifest();
 
   // Build the archive once, verify it by reading it back, and hold a
-  // live object URL so every delivery method uses the same blob.
+  // live blob + object URL so every delivery method uses the same file.
   useEffect(() => {
     let cancelled = false;
     let url: string | null = null;
@@ -65,6 +71,7 @@ export default function Download() {
         const blob = await createSourceZipBlob();
         if (cancelled) return;
         url = URL.createObjectURL(blob);
+        setZipBlob(blob);
         setZipUrl(url);
         setZipSize(blob.size);
 
@@ -89,50 +96,49 @@ export default function Download() {
 
   const say = (tone: Tone, text: string) => setStatus({ tone, text });
 
-  const handleDownload = () => {
-    if (!zipUrl) return;
+  /* ------------------------- delivery ladder ----------------------- */
 
-    // Inside a preview frame the plain anchor save is usually blocked, so
-    // route the download through a new top-level tab instead. At top
-    // level, use the direct anchor (the normal browser download path).
-    if (inFrame) {
-      const opened = openZipInNewTab(zipUrl);
-      if (opened) {
-        say(
-          "success",
-          "A new tab opened outside the preview frame — the ZIP download starts there. If it didn't, allow popups for this site and click again."
-        );
-        return;
-      }
-      say(
-        "error",
-        "The popup was blocked. Allow popups for this site and click Download ZIP again, or use “Copy all source”."
-      );
+  const handleDownload = async () => {
+    if (!zipBlob || !zipUrl) return;
+
+    // 1) Native "Save As" dialog — immune to the download sandbox.
+    const saved = await saveViaFileSystemAccess(zipBlob);
+    if (saved === "saved") {
+      say("success", `${ZIP_NAME} saved to the folder you picked.`);
+      return;
+    }
+    if (saved === "cancelled") {
+      say("info", "Save dialog closed — nothing was written.");
       return;
     }
 
-    const method = triggerAnchorDownload(zipUrl);
-    say(
-      "success",
-      method === "top-frame"
-        ? "Download requested — check your browser's download bar."
-        : "Download requested — check your browser's download bar."
-    );
+    // 2) Inside a preview frame: open the blob in a new top-level tab.
+    if (inFrame) {
+      if (openZipInNewTab(zipUrl)) {
+        say(
+          "success",
+          "A new tab opened outside the preview frame — the download starts there. If it didn't, allow popups for this site and click again, or use “Show source” below."
+        );
+      } else {
+        say(
+          "error",
+          "The popup was blocked. Allow popups and click again — or use “Copy all source” / “Show source”. Both always work."
+        );
+      }
+      return;
+    }
+
+    // 3) Top level: the ordinary browser download path.
+    triggerAnchorDownload(zipUrl);
+    say("success", "Download requested — check your browser's download bar.");
   };
 
   const handleNewTab = () => {
     if (!zipUrl) return;
-    const opened = openZipInNewTab(zipUrl);
-    if (opened) {
-      say(
-        "success",
-        "A new tab opened and the ZIP download starts there. This method bypasses the preview frame."
-      );
+    if (openZipInNewTab(zipUrl)) {
+      say("success", "A new tab opened and the ZIP download starts there.");
     } else {
-      say(
-        "error",
-        "Your browser blocked the popup. Allow popups for this site, or use “Copy all source” below."
-      );
+      say("error", "Your browser blocked the popup. Allow popups for this site, or use “Show source”.");
     }
   };
 
@@ -145,9 +151,31 @@ export default function Download() {
         `Copied ${PROJECT_FILES.length + 1} files to your clipboard. Paste into a .txt file and split on the "=== FILE:" markers.`
       );
     } catch {
-      say("error", "Clipboard is blocked here too — select and copy from the file list, or open this page in a full browser tab.");
+      setSourceOpen(true);
+      say("info", "Clipboard is blocked here — the source view opened instead. Use “Select all”, then Ctrl+C.");
     }
   };
+
+  /* --------------------------- source view ------------------------- */
+
+  useEffect(() => {
+    if (!sourceOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSourceOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sourceOpen]);
+
+  const selectAllSource = () => {
+    const el = sourceRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+    say("info", "All source selected — press Ctrl+C (⌘C on Mac) to copy it.");
+  };
+
+  /* ------------------------------ render --------------------------- */
 
   return (
     <>
@@ -156,7 +184,7 @@ export default function Download() {
         title="Take the whole project with you"
         description={`The complete, buildable source — ${PROJECT_FILES.length + 1} files, ${formatKb(
           totalSourceBytes
-        )} uncompressed — packed into ${ZIP_NAME} right in your browser. If a preview frame blocks the save, use the fallbacks below.`}
+        )} uncompressed — packed into ${ZIP_NAME} right in your browser. Four independent ways to get it below; at least one always works.`}
       />
 
       {inFrame && (
@@ -168,12 +196,12 @@ export default function Download() {
                 You're viewing this page inside a preview frame.
               </p>
               <p className="text-ink-soft mt-1">
-                Preview frames often silently block file downloads, so{" "}
-                <strong className="text-navy-900">Download ZIP</strong> will automatically
-                open the archive in a new tab — the download starts there, outside the
-                frame. If your browser blocks the popup, allow popups and try again, or
-                use <strong className="text-navy-900">Copy all source</strong>. The most
-                reliable option of all is to open this site in a normal browser tab.
+                Preview frames often silently swallow file downloads.{" "}
+                <strong className="text-navy-900">Download ZIP</strong> therefore tries a
+                native Save&nbsp;As dialog first, then a new browser tab. If both are
+                blocked, <strong className="text-navy-900">Copy all source</strong> or{" "}
+                <strong className="text-navy-900">Show source</strong> will always get the
+                files to you.
               </p>
             </div>
           </div>
@@ -218,7 +246,7 @@ export default function Download() {
                 <div className="flex flex-wrap items-center gap-3">
                   {phase === "ready" && zipUrl ? (
                     <>
-                      <button type="button" onClick={handleDownload} className="btn-primary">
+                      <button type="button" onClick={() => void handleDownload()} className="btn-primary">
                         <IconTooth className="h-4 w-4" />
                         Download ZIP
                       </button>
@@ -228,6 +256,9 @@ export default function Download() {
                       </button>
                       <button type="button" onClick={() => void handleCopy()} className="btn-outline">
                         Copy all source
+                      </button>
+                      <button type="button" onClick={() => setSourceOpen(true)} className="btn-outline">
+                        Show source
                       </button>
                     </>
                   ) : phase === "error" ? (
@@ -243,7 +274,7 @@ export default function Download() {
                   )}
                 </div>
 
-                {/* Manual anchor link — works even when buttons are restricted */}
+                {/* Manual anchor link — right-click → Save link as… */}
                 {phase === "ready" && zipUrl && (
                   <p className="text-xs leading-relaxed">
                     <span className="text-ink-soft">Prefer a plain link? </span>
@@ -254,10 +285,7 @@ export default function Download() {
                     >
                       {ZIP_NAME}
                     </a>
-                    <span className="text-ink-soft">
-                      {" "}
-                      — click it, or right-click → “Save link as…”.
-                    </span>
+                    <span className="text-ink-soft"> — click it, or right-click → “Save link as…”.</span>
                   </p>
                 )}
 
@@ -315,16 +343,20 @@ export default function Download() {
               <ol className="mt-4 space-y-4">
                 {[
                   {
-                    t: "Download ZIP opens a new tab",
-                    d: "Inside a preview, the button opens the ZIP in a fresh top-level tab that isn't sandboxed — Chrome downloads it there. If a popup blocker interferes, allow popups for this site and click again.",
+                    t: "A native Save As dialog should appear",
+                    d: "Download ZIP first tries your operating system's file picker (Chrome & Edge on Windows). That path ignores the preview's download restrictions entirely.",
                   },
                   {
-                    t: "Copy all source",
-                    d: `Puts all ${PROJECT_FILES.length + 1} files on your clipboard as marked text. Works whenever you can copy anything at all.`,
+                    t: "Otherwise a new tab opens",
+                    d: "The ZIP opens in a top-level browser tab outside the frame and downloads there. If it's blocked, allow popups for this site and click again.",
                   },
                   {
-                    t: "Open in a full browser tab",
-                    d: "Copy the site URL into Chrome's address bar. Outside the preview frame, Download ZIP always works.",
+                    t: "Copy all source — always works",
+                    d: `All ${PROJECT_FILES.length + 1} files go to your clipboard as marked text. Paste into a file; split on the "=== FILE:" markers.`,
+                  },
+                  {
+                    t: "Show source — the last resort",
+                    d: "Opens the entire source on screen with one “Select all” button. Copy it manually with Ctrl+C and save it on your machine.",
                   },
                 ].map((s, i) => (
                   <li key={s.t} className="flex gap-3.5">
@@ -370,6 +402,58 @@ export default function Download() {
           </Reveal>
         </div>
       </section>
+
+      {/* Source view modal — guaranteed egress */}
+      {sourceOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-navy-950/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Complete project source"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSourceOpen(false);
+          }}
+        >
+          <div className="border-line bg-paper flex h-[min(44rem,90dvh)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border shadow-2xl">
+            <div className="border-line bg-shell flex items-center justify-between gap-4 border-b px-5 py-3.5">
+              <div>
+                <h3 className="font-display text-navy-900 text-sm font-bold">
+                  Complete project source
+                </h3>
+                <p className="text-ink-soft text-xs">
+                  {PROJECT_FILES.length + 1} files · {formatKb(totalSourceBytes)} · split on
+                  the “=== FILE:” markers
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={selectAllSource} className="btn-outline h-9 px-3.5 text-[13px]">
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSourceOpen(false)}
+                  aria-label="Close source view"
+                  className="text-ink-soft hover:bg-navy-50 hover:text-navy-900 flex h-9 w-9 cursor-pointer items-center justify-center rounded-md transition-colors"
+                >
+                  <IconClose className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <textarea
+              ref={sourceRef}
+              readOnly
+              spellCheck={false}
+              aria-label="Project source text"
+              className="chat-scroll bg-navy-950 text-navy-100 flex-1 resize-none p-5 font-mono text-xs leading-relaxed focus:outline-none"
+              defaultValue={buildSourceText()}
+            />
+            <p className="border-line bg-shell text-ink-soft border-t px-5 py-2.5 text-[11px]">
+              Press Ctrl+A inside the box (or use “Select all”), then Ctrl+C — paste into
+              a text file on your machine. Esc closes this view.
+            </p>
+          </div>
+        </div>
+      )}
     </>
   );
 }

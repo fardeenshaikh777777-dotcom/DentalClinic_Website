@@ -144,11 +144,8 @@ export function openZipInNewTab(url: string): boolean {
   return win !== null;
 }
 
-/**
- * Fallback for environments where every download path is blocked:
- * copies the entire source tree as a single marked-up text block.
- */
-export async function copyAllSource(): Promise<void> {
+/** The whole source tree as one marked-up text block. */
+export function buildSourceText(): string {
   const parts: string[] = [
     "PEARL DENTAL & AESTHETICS — COMPLETE PROJECT SOURCE",
     `${PROJECT_FILES.length + 1} files. Split on the "=== FILE: …" markers to restore the tree.`,
@@ -159,7 +156,61 @@ export async function copyAllSource(): Promise<void> {
   for (const file of PROJECT_FILES) {
     parts.push("", `=== FILE: ${file.path} ===`, file.content);
   }
-  const text = parts.join("\n");
+  return parts.join("\n");
+}
+
+/* ------------------------------------------------------------------ */
+/*  File System Access — the native "Save As" dialog.                 */
+/*  Bypasses the download sandbox entirely: no anchor click, no       */
+/*  blob-URL navigation, no popup. Chrome/Edge on desktop.            */
+/* ------------------------------------------------------------------ */
+
+type WritableStreamLike = {
+  write: (data: Blob) => Promise<void>;
+  close: () => Promise<void>;
+};
+type FileHandleLike = {
+  createWritable: () => Promise<WritableStreamLike>;
+};
+type SaveFilePickerLike = (options: {
+  suggestedName: string;
+  types: { description: string; accept: Record<string, string[]> }[];
+}) => Promise<FileHandleLike>;
+
+export type SaveResult = "saved" | "unsupported" | "cancelled";
+
+/**
+ * Opens the OS file picker and streams the blob to disk.
+ * Returns "unsupported" where the API doesn't exist so callers can
+ * fall through to other delivery methods.
+ */
+export async function saveViaFileSystemAccess(blob: Blob): Promise<SaveResult> {
+  const picker = (
+    window as Window & { showSaveFilePicker?: SaveFilePickerLike }
+  ).showSaveFilePicker;
+  if (typeof picker !== "function") return "unsupported";
+
+  try {
+    const handle = await picker.call(window, {
+      suggestedName: ZIP_NAME,
+      types: [{ description: "ZIP archive", accept: { "application/zip": [".zip"] } }],
+    });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return "saved";
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
+    return "unsupported";
+  }
+}
+
+/**
+ * Copies the entire source tree to the clipboard — the fallback for
+ * environments where every download path is blocked.
+ */
+export async function copyAllSource(): Promise<void> {
+  const text = buildSourceText();
 
   if (navigator.clipboard?.writeText) {
     try {

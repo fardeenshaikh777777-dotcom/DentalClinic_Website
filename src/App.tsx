@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { Component, lazy, Suspense, useEffect, type ReactNode } from "react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Chatbot from "./components/Chatbot";
 import Footer from "./components/Footer";
@@ -21,6 +21,41 @@ function ScrollToTop() {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [pathname]);
   return null;
+}
+
+/* A failed lazy chunk or page error must never blank the whole site. */
+class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="wrap flex justify-center py-32">
+          <div className="card max-w-md p-8 text-center">
+            <h1 className="font-display text-navy-900 text-xl font-bold tracking-tight">
+              That page couldn't be loaded
+            </h1>
+            <p className="text-ink-soft mt-2 text-sm leading-relaxed">
+              A part of the site failed to load — usually a stale cached file after an
+              update. A quick reload almost always fixes it.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="btn-primary mt-6"
+            >
+              Reload the site
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 /* ------------------------- Lightweight legal pages ---------------- */
@@ -110,6 +145,42 @@ const TermsPage = () => (
 
 /* -------------------------------- App ----------------------------- */
 
+function SiteRoutes() {
+  const { pathname } = useLocation();
+  return (
+    // Keyed per route: if one page's chunk fails, navigating elsewhere
+    // resets the boundary instead of leaving the site dead.
+    <ErrorBoundary key={pathname}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/services" element={<Services />} />
+        <Route path="/doctors" element={<Doctors />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route
+          path="/download"
+          element={
+            <Suspense
+              fallback={
+                <div className="wrap flex items-center justify-center py-32">
+                  <p className="text-ink-soft font-display text-sm font-semibold tracking-wide">
+                    Preparing source archive…
+                  </p>
+                </div>
+              }
+            >
+              <Download />
+            </Suspense>
+          }
+        />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </ErrorBoundary>
+  );
+}
+
 export default function App() {
   return (
     <HashRouter>
@@ -118,32 +189,7 @@ export default function App() {
         <TopBar />
         <Navbar />
         <main id="main" className="flex-1">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/services" element={<Services />} />
-            <Route path="/doctors" element={<Doctors />} />
-            <Route path="/contact" element={<Contact />} />
-            <Route
-              path="/download"
-              element={
-                <Suspense
-                  fallback={
-                    <div className="wrap flex items-center justify-center py-32">
-                      <p className="text-ink-soft font-display text-sm font-semibold tracking-wide">
-                        Preparing source archive…
-                      </p>
-                    </div>
-                  }
-                >
-                  <Download />
-                </Suspense>
-              }
-            />
-            <Route path="/privacy" element={<PrivacyPage />} />
-            <Route path="/terms" element={<TermsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <SiteRoutes />
         </main>
         <Footer />
         <Chatbot />
