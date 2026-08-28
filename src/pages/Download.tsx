@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { PROJECT_FILES } from "../lib/projectFiles";
-import { downloadProjectZip, formatKb, totalSourceBytes } from "../lib/downloadZip";
+import {
+  ZIP_NAME,
+  copyAllSource,
+  createSourceZipBlob,
+  formatKb,
+  totalSourceBytes,
+} from "../lib/downloadZip";
 import PageHeader from "../components/PageHeader";
 import Reveal from "../components/Reveal";
 import { IconAlert, IconCheck, IconSpinner, IconTooth } from "../components/icons";
-
-type Status = "idle" | "working" | "done" | "error";
 
 const SETUP_STEPS = [
   {
@@ -23,36 +27,49 @@ const SETUP_STEPS = [
 ];
 
 export default function Download() {
-  const [status, setStatus] = useState<Status>("idle");
-  const attempted = useRef(false);
+  const [zipUrl, setZipUrl] = useState<string | null>(null);
+  const [zipError, setZipError] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "working" | "done" | "error">("idle");
 
-  const trigger = async () => {
-    if (status === "working") return;
-    setStatus("working");
+  // Build the archive once on arrival and hold a live object URL,
+  // so the button can be a real <a download> link — the most reliable
+  // way to save a file, even in restricted preview windows.
+  useEffect(() => {
+    let revoked = false;
+    let url: string | null = null;
+    createSourceZipBlob()
+      .then((blob) => {
+        if (revoked) return;
+        url = URL.createObjectURL(blob);
+        setZipUrl(url);
+      })
+      .catch(() => {
+        if (!revoked) setZipError(true);
+      });
+    return () => {
+      revoked = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    if (copyState === "working") return;
+    setCopyState("working");
     try {
-      await downloadProjectZip();
-      setStatus("done");
+      await copyAllSource();
+      setCopyState("done");
     } catch {
-      setStatus("error");
+      setCopyState("error");
     }
   };
-
-  // Attempt once on arrival; if the browser blocks a programmatic
-  // download, the button below remains one click away.
-  useEffect(() => {
-    if (attempted.current) return;
-    attempted.current = true;
-    const t = window.setTimeout(() => void trigger(), 600);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <>
       <PageHeader
         eyebrow="Source archive"
         title="Take the whole project with you"
-        description={`Everything below is packed into pearl-dental-source.zip — ${PROJECT_FILES.length + 1} files, ${formatKb(
+        description={`Everything below is packed into ${ZIP_NAME} — ${PROJECT_FILES.length + 1} files, ${formatKb(
           totalSourceBytes
         )} of source, zipped right in your browser.`}
       />
@@ -64,48 +81,56 @@ export default function Download() {
               <div className="border-line bg-parchment/60 flex flex-wrap items-center justify-between gap-4 border-b px-6 py-5">
                 <div>
                   <h2 className="font-display text-navy-900 font-bold tracking-tight">
-                    pearl-dental-source.zip
+                    {ZIP_NAME}
                   </h2>
                   <p className="text-ink-soft mt-0.5 text-xs">
                     {PROJECT_FILES.length + 1} files · {formatKb(totalSourceBytes)} uncompressed
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void trigger()}
-                  disabled={status === "working"}
-                  className="btn-primary disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {status === "working" ? (
-                    <>
-                      <IconSpinner className="h-4 w-4 animate-spin" />
-                      Packing…
-                    </>
-                  ) : (
-                    <>
-                      <IconTooth className="h-4 w-4" />
-                      Download ZIP
-                    </>
-                  )}
-                </button>
+
+                {zipUrl ? (
+                  <a
+                    href={zipUrl}
+                    download={ZIP_NAME}
+                    onClick={() => setDownloaded(true)}
+                    className="btn-primary"
+                  >
+                    <IconTooth className="h-4 w-4" />
+                    Download ZIP
+                  </a>
+                ) : (
+                  <span className="btn-primary pointer-events-none opacity-70">
+                    {zipError ? (
+                      <>
+                        <IconAlert className="h-4 w-4" />
+                        Archive failed
+                      </>
+                    ) : (
+                      <>
+                        <IconSpinner className="h-4 w-4 animate-spin" />
+                        Packing…
+                      </>
+                    )}
+                  </span>
+                )}
               </div>
 
-              {status === "done" && (
+              {downloaded && (
                 <p
                   role="status"
                   className="border-moss-600/25 bg-moss-100 text-moss-600 flex items-center gap-2.5 border-b px-6 py-3 text-sm font-medium"
                 >
                   <IconCheck className="h-4 w-4 shrink-0" />
-                  Download started — check your browser's downloads.
+                  Saving {ZIP_NAME} — check your browser's download bar.
                 </p>
               )}
-              {status === "error" && (
+              {zipError && (
                 <p
                   role="alert"
                   className="border-clay-600/25 bg-clay-100 text-clay-600 flex items-center gap-2.5 border-b px-6 py-3 text-sm font-medium"
                 >
                   <IconAlert className="h-4 w-4 shrink-0" />
-                  The browser blocked the automatic download — use the button above.
+                  The archive couldn't be built here — use "Copy all source" below instead.
                 </p>
               )}
 
@@ -126,6 +151,49 @@ export default function Download() {
                   </li>
                 ))}
               </ul>
+            </div>
+          </Reveal>
+
+          {/* Fallback for locked-down previews */}
+          <Reveal delay={80}>
+            <div className="card mt-6 p-6">
+              <h2 className="font-display text-navy-900 font-bold">
+                Download button does nothing?
+              </h2>
+              <p className="text-ink-soft mt-2 text-sm leading-relaxed">
+                Some preview windows block file downloads. Copy the entire source as
+                text instead — every file is included, clearly marked — and paste it
+                into files on your machine, or save it as{" "}
+                <code className="font-mono text-[13px]">pearl-dental-source.txt</code>.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleCopy()}
+                  disabled={copyState === "working"}
+                  className="btn-outline disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {copyState === "working" ? (
+                    <>
+                      <IconSpinner className="h-4 w-4 animate-spin" />
+                      Copying…
+                    </>
+                  ) : copyState === "done" ? (
+                    <>
+                      <IconCheck className="text-moss-600 h-4 w-4" />
+                      Copied to clipboard
+                    </>
+                  ) : (
+                    "Copy all source"
+                  )}
+                </button>
+                {copyState === "error" && (
+                  <span className="text-clay-600 text-xs font-medium">
+                    Clipboard blocked too — select and copy manually from the file list
+                    above, or open this page in a normal browser tab.
+                  </span>
+                )}
+              </div>
             </div>
           </Reveal>
         </div>

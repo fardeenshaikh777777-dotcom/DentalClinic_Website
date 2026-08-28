@@ -41,6 +41,7 @@ export default function Footer() {
               { to: "/services", label: "Services" },
               { to: "/doctors", label: "Doctors" },
               { to: "/contact", label: "Contact" },
+              { to: "/download", label: "Source Code" },
             ].map((l) => (
               <li key={l.to}>
                 <Link to={l.to} className="hover:text-paper transition-colors">

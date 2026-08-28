@@ -124,7 +124,22 @@ export default function App() {
             <Route path="/services" element={<Services />} />
             <Route path="/doctors" element={<Doctors />} />
             <Route path="/contact" element={<Contact />} />
-            <Route path="/download" element={<Download />} />
+            <Route
+              path="/download"
+              element={
+                <Suspense
+                  fallback={
+                    <div className="wrap flex items-center justify-center py-32">
+                      <p className="text-ink-soft font-display text-sm font-semibold tracking-wide">
+                        Preparing source archive…
+                      </p>
+                    </div>
+                  }
+                >
+                  <Download />
+                </Suspense>
+              }
+            />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
