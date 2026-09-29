@@ -1,11 +1,9 @@
 import { Link } from "react-router-dom";
 import { CLINIC, HOURS, SERVICES } from "../data/clinic";
 import { Logo } from "./Navbar";
-import { IconFacebook, IconInstagram, IconMail, IconPhone, IconPin, IconWhatsApp } from "./icons";
+import { IconMail, IconPhone, IconPin, IconWhatsApp } from "./icons";
 
 const SOCIALS = [
-  { label: "Instagram", href: "https://instagram.com", Icon: IconInstagram },
-  { label: "Facebook", href: "https://facebook.com", Icon: IconFacebook },
   { label: "WhatsApp", href: "https://wa.me/15035550142", Icon: IconWhatsApp },
 ];
 
@@ -41,7 +39,6 @@ export default function Footer() {
               { to: "/services", label: "Services" },
               { to: "/doctors", label: "Doctors" },
               { to: "/contact", label: "Contact" },
-              { to: "/download", label: "Source Code" },
             ].map((l) => (
               <li key={l.to}>
                 <Link to={l.to} className="hover:text-paper transition-colors">

@@ -65,6 +65,12 @@ export default function Navbar() {
     setOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, []);
+
   return (
     <header className="sticky top-0 z-40">
       <div className="border-line bg-paper/95 border-b backdrop-blur-sm">
@@ -105,6 +111,7 @@ export default function Navbar() {
         {/* Mobile menu */}
         <div
           id="mobile-menu"
+          hidden={!open}
           className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out lg:hidden ${
             open ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
           }`}

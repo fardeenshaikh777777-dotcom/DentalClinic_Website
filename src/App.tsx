@@ -7,15 +7,10 @@ import PageHeader from "./components/PageHeader";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
 import Doctors from "./pages/Doctors";
-import Download from "./pages/Download";
 import Home from "./pages/Home";
 import Services from "./pages/Services";
 import { CLINIC } from "./data/clinic";
 
-// NOTE: Download is bundled eagerly (not lazy). It carries the raw-source
-// manifest + jszip, which makes the main chunk larger — but a separate
-// chunk file can fail to fetch after a rebuild (stale hash in the preview
-// frame), blanking the page. Reliability wins here.
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -160,7 +155,6 @@ function SiteRoutes() {
         <Route path="/services" element={<Services />} />
         <Route path="/doctors" element={<Doctors />} />
         <Route path="/contact" element={<Contact />} />
-        <Route path="/download" element={<Download />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

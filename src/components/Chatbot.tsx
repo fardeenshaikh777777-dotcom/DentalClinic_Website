@@ -98,7 +98,7 @@ export default function Chatbot() {
 
   const confirmSummary = useCallback(
     async (draft: AppointmentDraft) => {
-      if (busy) return;
+      if (busy || typing || booking.step !== "confirm") return;
       setBusy(true);
       try {
         const res = await submitAppointment(draft);
@@ -110,12 +110,12 @@ export default function Chatbot() {
         setBusy(false);
       }
     },
-    [busy, pushBot]
+    [busy, typing, booking.step, pushBot]
   );
 
   const send = (raw: string) => {
     const text = raw.trim();
-    if (!text || typing) return;
+    if (!text || typing || busy) return;
     setMessages((prev) => [...prev, { id: ++nextId, from: "user", text }]);
     setInput("");
 
@@ -133,7 +133,7 @@ export default function Chatbot() {
 
   const lastMsg = messages[messages.length - 1];
   const showQuickReplies =
-    !typing && lastMsg?.from === "bot" && (lastMsg.extras?.quickReplies?.length ?? 0) > 0;
+    !busy && !typing && lastMsg?.from === "bot" && (lastMsg.extras?.quickReplies?.length ?? 0) > 0;
 
   return (
     <>
@@ -243,7 +243,7 @@ export default function Chatbot() {
                         <button
                           type="button"
                           onClick={() => confirmSummary(msg.extras!.summary!)}
-                          disabled={busy || idx !== messages.length - 1}
+                          disabled={busy || typing || booking.step !== "confirm" || idx !== messages.length - 1}
                           className="btn-primary mt-3.5 h-9 w-full text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {busy && idx === messages.length - 1 ? (
@@ -336,7 +336,7 @@ export default function Chatbot() {
             <button
               type="submit"
               aria-label="Send message"
-              disabled={!input.trim() || typing}
+              disabled={!input.trim() || typing || busy}
               className="btn-primary h-10 w-10 shrink-0 p-0 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <IconSend className="h-4 w-4" />

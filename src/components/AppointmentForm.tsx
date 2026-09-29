@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CLINIC, SERVICES, TIME_SLOTS } from "../data/clinic";
-import { submitAppointment, type AppointmentRequest } from "../services/api";
+import { bookingAvailable, submitAppointment, type AppointmentRequest } from "../services/api";
 import { IconAlert, IconCheck, IconSpinner } from "./icons";
 
 interface FormState {
@@ -69,7 +69,7 @@ export default function AppointmentForm({
 
   // Keep the pre-selected service in sync when navigating with ?service=…
   useEffect(() => {
-    if (defaultService) setForm((f) => ({ ...f, service: defaultService }));
+    setForm((f) => ({ ...f, service: SERVICES.some((s) => s.name === defaultService) ? defaultService : "" }));
   }, [defaultService]);
 
   const set = (field: keyof FormState, value: string) => {
@@ -79,6 +79,7 @@ export default function AppointmentForm({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (status === "submitting") return;
     const errs = validate(form);
     if (Object.values(errs).some(Boolean)) {
       setErrors(errs);
@@ -154,6 +155,7 @@ export default function AppointmentForm({
 
   return (
     <form onSubmit={handleSubmit} noValidate>
+      {!bookingAvailable && <p role="status" className="mb-5 text-sm text-ink-soft">Online appointment requests are currently unavailable. Please <a className="font-semibold underline" href={CLINIC.phoneHref}>call {CLINIC.phone}</a> to book.</p>}
       {status === "error" && (
         <div
           role="alert"
@@ -312,7 +314,7 @@ export default function AppointmentForm({
 
       <button
         type="submit"
-        disabled={status === "submitting"}
+        disabled={!bookingAvailable || status === "submitting"}
         className="btn-primary mt-6 w-full disabled:cursor-not-allowed disabled:opacity-70"
       >
         {status === "submitting" ? (
@@ -325,8 +327,7 @@ export default function AppointmentForm({
         )}
       </button>
       <p className="text-ink-soft mt-3 text-center text-xs leading-relaxed">
-        This sends a request — we confirm every appointment by phone within one
-        business hour. Nothing is booked until then.
+        {bookingAvailable ? "This sends a request — we confirm appointments by phone. Nothing is booked until then." : "Please contact the clinic directly to request an appointment."}
       </p>
     </form>
   );

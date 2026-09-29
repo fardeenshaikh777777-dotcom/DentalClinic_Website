@@ -1,3 +1,4 @@
+import { bookingAvailable } from "../services/api";
 /* ------------------------------------------------------------------ */
 /*  DentaCare Assistant — conversation engine.                        */
 /*  Rule-based intent matching + a guided booking state machine.      */
@@ -418,6 +419,12 @@ export function respond(
 
   // 3) Intent matching.
   if (has(t, ["book", "appointment", "schedule", "reserve a", "come in"])) {
+    if (!bookingAvailable) {
+      return {
+        message: { text: `Online appointment requests are currently unavailable. Please call ${CLINIC.phone} to book with our team.`, quickReplies: ["What are your clinic hours?", "Where are you located?"] },
+        booking: initialBooking,
+      };
+    }
     return startBooking();
   }
   if (has(t, ["emergency", "urgent", "asap", "broken tooth", "chipped", "cracked"])) {

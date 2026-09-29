@@ -36,14 +36,6 @@ import {
 
 const openChat = () => window.dispatchEvent(new Event("pearl:open-chat"));
 
-function scrollToId(id: string) {
-  document.getElementById(id)?.scrollIntoView({
-    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ? "auto"
-      : "smooth",
-  });
-}
-
 /* ------------------------------- Hero ------------------------------ */
 
 function Hero() {
