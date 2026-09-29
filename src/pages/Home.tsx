@@ -86,14 +86,6 @@ function Hero() {
         <div className="lg:col-span-6">
           <Reveal delay={120}>
             <div className="relative">
-              <div
-                className="bg-navy-900 absolute -top-5 right-6 h-24 w-24 rounded-t-[10rem] rounded-b-lg opacity-90"
-                aria-hidden="true"
-              />
-              <div
-                className="bg-brass-500/25 absolute -top-3 right-8 h-24 w-24 rounded-t-[10rem] rounded-b-lg"
-                aria-hidden="true"
-              />
               <div className="relative overflow-hidden rounded-xl rounded-tr-[11rem]">
                 <img
                   src={IMAGES.hero}
